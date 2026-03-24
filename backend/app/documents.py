@@ -178,3 +178,37 @@ def download_document(doc_id):
         return jsonify({"error": "File not found on disk"}), 404
 
     return send_file(file_path, as_attachment=True, download_name=f"{doc.title}.{doc.file_type}")
+
+
+@documents_bp.route("/<int:doc_id>/preview", methods=["GET"])
+@jwt_required()
+def preview_document(doc_id):
+    """Serve the file inline so the browser can render it (PDF, image, etc.)."""
+    user_id = int(get_jwt_identity())
+    doc = Document.query.filter_by(id=doc_id, user_id=user_id).first()
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+
+    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found on disk"}), 404
+
+    # MIME type map for common document/image types
+    mime_map = {
+        "pdf":  "application/pdf",
+        "png":  "image/png",
+        "jpg":  "image/jpeg",
+        "jpeg": "image/jpeg",
+        "gif":  "image/gif",
+        "webp": "image/webp",
+        "svg":  "image/svg+xml",
+        "txt":  "text/plain",
+    }
+    mime = mime_map.get(doc.file_type.lower(), "application/octet-stream")
+
+    return send_file(
+        file_path,
+        mimetype=mime,
+        as_attachment=False,          # inline — let the browser render it
+        download_name=f"{doc.title}.{doc.file_type}",
+    )

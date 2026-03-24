@@ -6,9 +6,10 @@ import AuthGuard from "@/components/AuthGuard";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import api from "@/lib/api";
-import { ArrowLeft, Download, Trash2, Save, FileText, Calendar, Tag } from "lucide-react";
+import { ArrowLeft, Download, Trash2, Save, FileText, Calendar, Eye } from "lucide-react";
 import { format } from "date-fns";
 import toast from "react-hot-toast";
+import DocPreview from "@/components/DocPreview";
 
 interface Document {
   id: number;
@@ -46,6 +47,7 @@ export default function DocumentDetailPage() {
   const router = useRouter();
   const [doc, setDoc] = useState<Document | null>(null);
   const [editing, setEditing] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [form, setForm] = useState({ title: "", description: "", category: "", important_date: "", date_label: "", reminder_days_before: 30, collection_id: "", tags: "" });
 
@@ -152,6 +154,12 @@ export default function DocumentDetailPage() {
             </div>
             <div className="flex gap-2">
               <button onClick={handleDownload} className="flex items-center gap-1 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"><Download size={14} /> Download</button>
+              <button
+                onClick={() => setShowPreview((p) => !p)}
+                className={`flex items-center gap-1 px-3 py-2 text-sm rounded-lg transition-colors ${showPreview ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+              >
+                <Eye size={14} /> {showPreview ? "Hide Preview" : "Preview"}
+              </button>
               {editing ? (
                 <button onClick={handleSave} className="flex items-center gap-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"><Save size={14} /> Save</button>
               ) : (
@@ -239,6 +247,15 @@ export default function DocumentDetailPage() {
               </div>
             </div>
           </div>
+
+          {showPreview && (
+            <div className="mt-6 pt-6 border-t border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Eye size={14} /> Document Preview
+              </h2>
+              <DocPreview docId={doc.id} fileType={doc.file_type} title={doc.title} />
+            </div>
+          )}
         </div>
       </main>
     </AuthGuard>

@@ -1,6 +1,6 @@
 import os
 from datetime import timedelta
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
@@ -18,17 +18,32 @@ def create_app():
     db.init_app(app)
     Migrate(app, db)
     CORS(app, resources={r"/api/*": {"origins": "*"}})
-    JWTManager(app)
+    jwt = JWTManager(app)
+
+    # JWT error handlers
+    @jwt.unauthorized_loader
+    def unauthorized_callback(error_string):
+        return jsonify({"error": "Missing or invalid authorization token", "message": error_string}), 401
+
+    @jwt.invalid_token_loader
+    def invalid_token_callback(error_string):
+        return jsonify({"error": "Invalid token", "message": error_string}), 401
+
+    @jwt.expired_token_loader
+    def expired_token_callback(jwt_header, jwt_payload):
+        return jsonify({"error": "Token has expired", "message": "Please log in again"}), 401
 
     from .auth import auth_bp
     from .documents import documents_bp
     from .collections import collections_bp
     from .notifications import notifications_bp
+    from .bot import bot_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(documents_bp)
     app.register_blueprint(collections_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(bot_bp)
 
     with app.app_context():
         db.create_all()

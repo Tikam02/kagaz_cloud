@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, FileText, Receipt, FolderOpen, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { LayoutDashboard, FileText, Receipt, FolderOpen, Plus, ChevronDown, ChevronRight, UserCircle, LogOut } from "lucide-react";
 import api from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 interface Collection {
   id: number;
@@ -22,10 +23,18 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [collectionsOpen, setCollectionsOpen] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
+
+  const initials = (user?.name ?? "?")
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
   useEffect(() => {
     fetchCollections();
@@ -138,6 +147,34 @@ export default function Sidebar() {
           )}
         </div>
       </nav>
+
+      {/* Bottom user section */}
+      <div className="p-3 border-t border-gray-700 space-y-1">
+        <Link
+          href="/profile"
+          className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+            pathname === "/profile"
+              ? "bg-blue-600 text-white"
+              : "text-gray-300 hover:bg-gray-800 hover:text-white"
+          }`}
+        >
+          <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium truncate">{user?.name ?? "Profile"}</p>
+            <p className="text-xs text-gray-400 truncate">{user?.email ?? ""}</p>
+          </div>
+          <UserCircle size={15} className="flex-shrink-0 opacity-60" />
+        </Link>
+        <button
+          onClick={logout}
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-800 hover:text-red-400 transition-colors w-full"
+        >
+          <LogOut size={16} />
+          Sign Out
+        </button>
+      </div>
     </aside>
   );
 }

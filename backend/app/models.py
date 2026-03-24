@@ -9,7 +9,14 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     name = db.Column(db.String(100), nullable=False)
+    phone = db.Column(db.String(20), nullable=True)
+    telegram_chat_id = db.Column(db.String(50), nullable=True)
+    telegram_link_token = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        db.UniqueConstraint("telegram_chat_id", name="uq_user_telegram_chat_id"),
+    )
 
     documents = db.relationship("Document", backref="owner", lazy=True, cascade="all, delete-orphan")
     collections = db.relationship("Collection", backref="owner", lazy=True, cascade="all, delete-orphan")
@@ -20,6 +27,8 @@ class User(db.Model):
             "id": self.id,
             "email": self.email,
             "name": self.name,
+            "phone": self.phone,
+            "telegram_chat_id": self.telegram_chat_id,
             "created_at": self.created_at.isoformat(),
         }
 

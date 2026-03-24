@@ -7,6 +7,8 @@ interface User {
   id: number;
   email: string;
   name: string;
+  phone: string | null;
+  telegram_chat_id: string | null;
   created_at: string;
 }
 
@@ -16,6 +18,9 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
+  updateProfile: (data: { name?: string; email?: string; phone?: string }) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
   loading: boolean;
 }
 
@@ -36,22 +41,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
+  const persistUser = (u: User) => {
+    localStorage.setItem("user", JSON.stringify(u));
+    setUser(u);
+  };
+
   const login = async (email: string, password: string) => {
     const res = await api.post("/auth/login", { email, password });
     const { token: t, user: u } = res.data;
     localStorage.setItem("token", t);
-    localStorage.setItem("user", JSON.stringify(u));
+    persistUser(u);
     setToken(t);
-    setUser(u);
   };
 
   const register = async (name: string, email: string, password: string) => {
     const res = await api.post("/auth/register", { name, email, password });
     const { token: t, user: u } = res.data;
     localStorage.setItem("token", t);
-    localStorage.setItem("user", JSON.stringify(u));
+    persistUser(u);
     setToken(t);
-    setUser(u);
   };
 
   const logout = () => {
@@ -61,8 +69,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const updateProfile = async (data: { name?: string; email?: string; phone?: string }) => {
+    const res = await api.put("/auth/profile", data);
+    persistUser(res.data.user);
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    await api.put("/auth/password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  };
+
+  const refreshUser = async () => {
+    const res = await api.get("/auth/me");
+    persistUser(res.data.user);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, loading }}>
+    <AuthContext.Provider
+      value={{ user, token, login, register, logout, updateProfile, changePassword, refreshUser, loading }}
+    >
       {children}
     </AuthContext.Provider>
   );
