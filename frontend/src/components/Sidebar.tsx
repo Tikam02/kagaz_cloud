@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, FileText, Receipt, FolderOpen, Plus, ChevronDown, ChevronRight, UserCircle, LogOut } from "lucide-react";
+import { LayoutDashboard, FileText, Receipt, FolderOpen, Plus, ChevronDown, ChevronRight, UserCircle, LogOut, FlaskConical } from "lucide-react";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -19,6 +19,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/documents", label: "All Documents", icon: FileText },
   { href: "/bills", label: "Bills", icon: Receipt },
+  { href: "/tools", label: "Document Lab", icon: FlaskConical },
 ];
 
 export default function Sidebar() {
