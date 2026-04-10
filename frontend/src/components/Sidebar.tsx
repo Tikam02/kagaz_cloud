@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, FileText, Receipt, FolderOpen, Plus, ChevronDown, ChevronRight, UserCircle, LogOut, FlaskConical } from "lucide-react";
+import { LayoutDashboard, FileText, Receipt, FolderOpen, Plus, ChevronDown, ChevronRight, UserCircle, LogOut, FlaskConical, LifeBuoy, ShieldCheck } from "lucide-react";
 import api from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -20,6 +20,7 @@ const navItems = [
   { href: "/documents", label: "All Documents", icon: FileText },
   { href: "/bills", label: "Bills", icon: Receipt },
   { href: "/tools", label: "Document Lab", icon: FlaskConical },
+  { href: "/support", label: "Support", icon: LifeBuoy },
 ];
 
 export default function Sidebar() {
@@ -148,6 +149,23 @@ export default function Sidebar() {
           )}
         </div>
       </nav>
+
+      {/* Admin link */}
+      {user?.is_admin && (
+        <div className="px-3 mt-2">
+          <Link
+            href="/admin"
+            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+              pathname === "/admin"
+                ? "bg-purple-600 text-white"
+                : "text-purple-300 hover:bg-gray-800 hover:text-white"
+            }`}
+          >
+            <ShieldCheck size={18} />
+            Admin Panel
+          </Link>
+        </div>
+      )}
 
       {/* Bottom user section */}
       <div className="p-3 border-t border-gray-700 space-y-1">

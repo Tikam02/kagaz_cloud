@@ -8,6 +8,7 @@ interface User {
   email: string;
   name: string;
   phone: string | null;
+  is_admin: boolean;
   telegram_chat_id: string | null;
   created_at: string;
 }

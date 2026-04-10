@@ -38,12 +38,16 @@ def create_app():
     from .collections import collections_bp
     from .notifications import notifications_bp
     from .bot import bot_bp
+    from .admin import admin_bp
+    from .tickets import tickets_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(documents_bp)
     app.register_blueprint(collections_bp)
     app.register_blueprint(notifications_bp)
     app.register_blueprint(bot_bp)
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(tickets_bp)
 
     @app.route("/api/health")
     def health_check():

@@ -10,6 +10,8 @@ class User(db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(20), nullable=True)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    last_login = db.Column(db.DateTime, nullable=True)
     telegram_chat_id = db.Column(db.String(50), nullable=True)
     telegram_link_token = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -21,6 +23,7 @@ class User(db.Model):
     documents = db.relationship("Document", backref="owner", lazy=True, cascade="all, delete-orphan")
     collections = db.relationship("Collection", backref="owner", lazy=True, cascade="all, delete-orphan")
     notifications = db.relationship("Notification", backref="user", lazy=True, cascade="all, delete-orphan")
+    tickets = db.relationship("SupportTicket", backref="user", lazy=True, cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -28,8 +31,17 @@ class User(db.Model):
             "email": self.email,
             "name": self.name,
             "phone": self.phone,
+            "is_admin": self.is_admin,
             "telegram_chat_id": self.telegram_chat_id,
             "created_at": self.created_at.isoformat(),
+        }
+
+    def to_admin_dict(self):
+        return {
+            **self.to_dict(),
+            "last_login": self.last_login.isoformat() if self.last_login else None,
+            "document_count": len(self.documents),
+            "collection_count": len(self.collections),
         }
 
 
@@ -117,4 +129,46 @@ class Notification(db.Model):
             "type": self.type,
             "is_read": self.is_read,
             "created_at": self.created_at.isoformat(),
+        }
+
+
+class PasswordResetToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    token = db.Column(db.String(128), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = db.relationship("User", backref="reset_tokens")
+
+
+class SupportTicket(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    subject = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(50), default="general")  # general, bug, feature, account
+    status = db.Column(db.String(20), default="open")  # open, in_progress, resolved, closed
+    priority = db.Column(db.String(20), default="medium")  # low, medium, high
+    admin_reply = db.Column(db.Text, nullable=True)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "user_name": self.user.name if self.user else None,
+            "user_email": self.user.email if self.user else None,
+            "subject": self.subject,
+            "description": self.description,
+            "category": self.category,
+            "status": self.status,
+            "priority": self.priority,
+            "admin_reply": self.admin_reply,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
         }
