@@ -45,6 +45,15 @@ def create_app():
     app.register_blueprint(notifications_bp)
     app.register_blueprint(bot_bp)
 
+    @app.route("/api/health")
+    def health_check():
+        try:
+            db.session.execute(db.text("SELECT 1"))
+            db_status = "ok"
+        except Exception:
+            db_status = "error"
+        return jsonify({"status": "ok", "database": db_status})
+
     with app.app_context():
         db.create_all()
 

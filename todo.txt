@@ -3,3 +3,18 @@ Add OCR
 Add modularization
 Add teams and sharing links
 Add encrption 
+
+
+
+
+cd /home/tikam/dev/kagaz_cloud
+git pull origin main
+
+# Deploy backend
+./deploy/deploy-backend.sh
+
+# Deploy frontend
+./deploy/deploy-frontend.sh
+
+# Setup nginx (pass your domain, or omit for default)
+./deploy/setup-nginx.sh yourdomain.com
