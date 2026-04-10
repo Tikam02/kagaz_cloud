@@ -1,0 +1,5 @@
+Integrate PDF tools - https://github.com/Stirling-Tools/stirling-pdf
+Add OCR
+Add modularization
+Add teams and sharing links
+Add encrption 
