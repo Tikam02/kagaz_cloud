@@ -113,7 +113,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (user && !user.is_admin) {
-      router.push("/");
+      router.push("/dashboard");
     }
   }, [user, router]);
 

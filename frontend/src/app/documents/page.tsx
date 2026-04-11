@@ -99,7 +99,7 @@ function DocumentsContent() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {documents.map((doc) => (
-              <DocumentCard key={doc.id} doc={doc} />
+              <DocumentCard key={doc.id} doc={doc} onUpdate={fetchDocuments} />
             ))}
           </div>
         )}

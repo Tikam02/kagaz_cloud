@@ -1,11 +1,13 @@
 import os
 import uuid
+import secrets
 import logging
 import threading
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from .models import db, Document
+from werkzeug.security import generate_password_hash, check_password_hash
+from .models import db, Document, ShareLink
 from .extract_metadata import extract_metadata
 from . import search as search_service
 
@@ -313,3 +315,151 @@ def reextract_metadata(doc_id):
     threading.Thread(target=_bg_reextract, args=(app, doc.id, file_path), daemon=True).start()
 
     return jsonify({"status": "extracting", "message": "Extraction started, poll GET /metadata for results"}), 202
+
+
+# ── Share Endpoints ──────────────────────────────────────────────────────────
+
+@documents_bp.route("/share", methods=["POST"])
+@jwt_required()
+def create_share_link():
+    """Create a shareable link for a document."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json()
+    doc_id = data.get("doc_id")
+    expiry_hours = min(int(data.get("expiry_hours", 24)), 720)  # max 30 days
+    password = data.get("password")  # optional
+
+    doc = Document.query.filter_by(id=doc_id, user_id=user_id).first()
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+
+    token = secrets.token_urlsafe(32)
+    link = ShareLink(
+        user_id=user_id,
+        document_id=doc_id,
+        token=token,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=expiry_hours),
+    )
+    if password:
+        link.password_hash = generate_password_hash(password)
+    db.session.add(link)
+    db.session.commit()
+
+    return jsonify({"token": token, "expires_at": link.expires_at.isoformat(), "has_password": link.has_password}), 201
+
+
+@documents_bp.route("/share/my", methods=["GET"])
+@jwt_required()
+def list_share_links():
+    """List all share links created by the current user."""
+    user_id = int(get_jwt_identity())
+    links = ShareLink.query.filter_by(user_id=user_id).order_by(ShareLink.created_at.desc()).all()
+    return jsonify({"links": [l.to_dict() for l in links]})
+
+
+@documents_bp.route("/share/<token_str>", methods=["DELETE"])
+@jwt_required()
+def revoke_share_link(token_str):
+    """Revoke a share link."""
+    user_id = int(get_jwt_identity())
+    link = ShareLink.query.filter_by(token=token_str, user_id=user_id).first()
+    if not link:
+        return jsonify({"error": "Link not found"}), 404
+    db.session.delete(link)
+    db.session.commit()
+    return jsonify({"message": "Link revoked"})
+
+
+@documents_bp.route("/share/<token_str>/info", methods=["GET"])
+def share_link_info(token_str):
+    """Public endpoint — get info about a shared document."""
+    link = ShareLink.query.filter_by(token=token_str).first()
+    if not link or link.expired:
+        return jsonify({"error": "Link expired or not found"}), 404
+    return jsonify({
+        "title": link.document.title,
+        "file_type": link.document.file_type,
+        "expires_at": link.expires_at.isoformat(),
+        "views": link.views_count,
+        "has_password": link.has_password,
+    })
+
+
+@documents_bp.route("/share/<token_str>/file", methods=["GET"])
+def share_link_download(token_str):
+    """Public endpoint — download the shared file."""
+    link = ShareLink.query.filter_by(token=token_str).first()
+    if not link or link.expired:
+        return jsonify({"error": "Link expired or not found"}), 404
+
+    if link.has_password:
+        pw = request.args.get("password", "")
+        if not pw or not check_password_hash(link.password_hash, pw):
+            return jsonify({"error": "Invalid password"}), 403
+
+    link.views_count += 1
+    db.session.commit()
+
+    doc = link.document
+    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found"}), 404
+
+    return send_file(file_path, as_attachment=True, download_name=f"{doc.title}.{doc.file_type}")
+
+
+@documents_bp.route("/share/<token_str>/preview", methods=["GET"])
+def share_link_preview(token_str):
+    """Public endpoint — serve the shared file inline for browser preview."""
+    link = ShareLink.query.filter_by(token=token_str).first()
+    if not link or link.expired:
+        return jsonify({"error": "Link expired or not found"}), 404
+
+    if link.has_password:
+        pw = request.args.get("password", "")
+        if not pw or not check_password_hash(link.password_hash, pw):
+            return jsonify({"error": "Invalid password"}), 403
+
+    link.views_count += 1
+    db.session.commit()
+
+    doc = link.document
+    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found"}), 404
+
+    mime_map = {
+        "pdf":  "application/pdf",
+        "png":  "image/png",
+        "jpg":  "image/jpeg",
+        "jpeg": "image/jpeg",
+        "gif":  "image/gif",
+        "webp": "image/webp",
+        "svg":  "image/svg+xml",
+        "txt":  "text/plain",
+    }
+    mime = mime_map.get(doc.file_type.lower(), "application/octet-stream")
+
+    return send_file(
+        file_path,
+        mimetype=mime,
+        as_attachment=False,
+        download_name=f"{doc.title}.{doc.file_type}",
+    )
+
+
+@documents_bp.route("/share/<token_str>/verify", methods=["POST"])
+def share_link_verify_password(token_str):
+    """Public endpoint — verify the password for a password-protected share link."""
+    link = ShareLink.query.filter_by(token=token_str).first()
+    if not link or link.expired:
+        return jsonify({"error": "Link expired or not found"}), 404
+
+    if not link.has_password:
+        return jsonify({"valid": True})
+
+    data = request.get_json() or {}
+    password = data.get("password", "")
+    if check_password_hash(link.password_hash, password):
+        return jsonify({"valid": True})
+    return jsonify({"valid": False, "error": "Incorrect password"}), 403

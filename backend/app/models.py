@@ -174,3 +174,37 @@ class SupportTicket(db.Model):
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
+
+
+class ShareLink(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    document_id = db.Column(db.Integer, db.ForeignKey("document.id"), nullable=False)
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=True)
+    views_count = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = db.relationship("User", backref="share_links")
+    document = db.relationship("Document", backref="share_links")
+
+    @property
+    def expired(self):
+        return datetime.now(timezone.utc) > self.expires_at.replace(tzinfo=timezone.utc)
+
+    @property
+    def has_password(self):
+        return self.password_hash is not None
+
+    def to_dict(self):
+        return {
+            "token": self.token,
+            "document_id": self.document_id,
+            "document_title": self.document.title if self.document else None,
+            "expires_at": self.expires_at.isoformat(),
+            "views_count": self.views_count,
+            "expired": self.expired,
+            "has_password": self.has_password,
+            "created_at": self.created_at.isoformat(),
+        }

@@ -16,7 +16,7 @@ interface Collection {
 }
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/search", label: "Search", icon: Search },
   { href: "/documents", label: "All Documents", icon: FileText },
   { href: "/bills", label: "Bills", icon: Receipt },

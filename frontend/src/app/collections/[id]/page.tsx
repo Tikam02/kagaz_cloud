@@ -51,7 +51,7 @@ export default function CollectionDetailPage() {
       setDocuments(res.data.documents);
       setName(res.data.collection.name);
     } catch {
-      router.push("/");
+      router.push("/dashboard");
     }
   };
 
@@ -70,7 +70,7 @@ export default function CollectionDetailPage() {
     try {
       await api.delete(`/collections/${params.id}`);
       toast.success("Collection deleted");
-      router.push("/");
+      router.push("/dashboard");
     } catch {
       toast.error("Delete failed");
     }
@@ -83,7 +83,7 @@ export default function CollectionDetailPage() {
       <Sidebar />
       <Navbar />
       <main className="ml-64 mt-16 p-6">
-        <button onClick={() => router.push("/")} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
+        <button onClick={() => router.push("/dashboard")} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
           <ArrowLeft size={16} /> Back
         </button>
 
@@ -116,7 +116,7 @@ export default function CollectionDetailPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {documents.map((doc) => (
-              <DocumentCard key={doc.id} doc={doc} />
+              <DocumentCard key={doc.id} doc={doc} onUpdate={fetchCollection} />
             ))}
           </div>
         )}
