@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, Upload, FileUp } from "lucide-react";
+import { X, Upload, FileUp, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
 
@@ -104,7 +104,7 @@ export default function UploadModal({ open, onClose, onUploaded, defaultCollecti
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto relative">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">Upload Document</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
@@ -192,11 +192,26 @@ export default function UploadModal({ open, onClose, onUploaded, defaultCollecti
           <button
             type="submit"
             disabled={uploading || !file}
-            className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            {uploading ? "Uploading..." : "Upload Document"}
+            {uploading ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Uploading & Analyzing...
+              </>
+            ) : (
+              "Upload Document"
+            )}
           </button>
         </form>
+
+        {uploading && (
+          <div className="absolute inset-0 bg-white/80 rounded-xl flex flex-col items-center justify-center gap-3 z-10">
+            <Loader2 size={32} className="animate-spin text-blue-600" />
+            <p className="text-sm font-medium text-gray-700">Uploading & extracting metadata...</p>
+            <p className="text-xs text-gray-400">Auto-filling title, description & tags</p>
+          </div>
+        )}
       </div>
     </div>
   );

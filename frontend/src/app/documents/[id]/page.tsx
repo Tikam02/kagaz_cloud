@@ -6,10 +6,27 @@ import AuthGuard from "@/components/AuthGuard";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import api from "@/lib/api";
-import { ArrowLeft, Download, Trash2, Save, FileText, Calendar, Eye } from "lucide-react";
+import { ArrowLeft, Download, Trash2, Save, FileText, Calendar, Eye, Sparkles, RefreshCw, X } from "lucide-react";
 import { format } from "date-fns";
 import toast from "react-hot-toast";
 import DocPreview from "@/components/DocPreview";
+
+interface MetadataDate {
+  date: string;
+  label: string;
+  raw: string;
+}
+
+interface DocumentMetadata {
+  headline: string | null;
+  dates: MetadataDate[];
+  amounts: string[];
+  summary: string | null;
+  page_count: number | null;
+  doc_metadata: Record<string, string>;
+  full_text_preview: string | null;
+  error?: string;
+}
 
 interface Document {
   id: number;
@@ -23,6 +40,7 @@ interface Document {
   reminder_days_before: number;
   collection_id: number | null;
   tags: string[];
+  metadata_extracted: DocumentMetadata | null;
   created_at: string;
   updated_at: string;
 }
@@ -50,6 +68,9 @@ export default function DocumentDetailPage() {
   const [showPreview, setShowPreview] = useState(true);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [form, setForm] = useState({ title: "", description: "", category: "", important_date: "", date_label: "", reminder_days_before: 30, collection_id: "", tags: "" });
+  const [showMetadata, setShowMetadata] = useState(false);
+  const [metadata, setMetadata] = useState<DocumentMetadata | null>(null);
+  const [extracting, setExtracting] = useState(false);
 
   useEffect(() => {
     fetchDocument();
@@ -122,6 +143,52 @@ export default function DocumentDetailPage() {
     }
   };
 
+  const handleShowMetadata = async () => {
+    setShowMetadata(true);
+    // Use cached metadata if available
+    if (doc?.metadata_extracted) {
+      setMetadata(doc.metadata_extracted);
+      return;
+    }
+    // Otherwise trigger extraction
+    await handleExtractMetadata();
+  };
+
+  const handleExtractMetadata = async () => {
+    setExtracting(true);
+    try {
+      await api.post(`/documents/${params.id}/metadata/extract`);
+      // Poll for results since extraction runs in background
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await api.get(`/documents/${params.id}/metadata`);
+          if (res.data.metadata) {
+            clearInterval(pollInterval);
+            setMetadata(res.data.metadata);
+            fetchDocument();
+            toast.success("Metadata extracted");
+            setExtracting(false);
+          }
+        } catch {
+          clearInterval(pollInterval);
+          toast.error("Metadata extraction failed");
+          setExtracting(false);
+        }
+      }, 2000);
+      // Stop polling after 90s
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        if (extracting) {
+          toast.error("Metadata extraction timed out");
+          setExtracting(false);
+        }
+      }, 90000);
+    } catch {
+      toast.error("Metadata extraction failed");
+      setExtracting(false);
+    }
+  };
+
   if (!doc) return <AuthGuard><Sidebar /><Navbar /><main className="ml-64 mt-16 p-6"><div className="animate-pulse h-64 bg-gray-200 rounded-xl" /></main></AuthGuard>;
 
   return (
@@ -154,6 +221,7 @@ export default function DocumentDetailPage() {
             </div>
             <div className="flex gap-2">
               <button onClick={handleDownload} className="flex items-center gap-1 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"><Download size={14} /> Download</button>
+              <button onClick={handleShowMetadata} className="flex items-center gap-1 px-3 py-2 text-sm bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100"><Sparkles size={14} /> See Metadata</button>
               <button
                 onClick={() => setShowPreview((p) => !p)}
                 className={`flex items-center gap-1 px-3 py-2 text-sm rounded-lg transition-colors ${showPreview ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
@@ -257,6 +325,111 @@ export default function DocumentDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Metadata Modal */}
+        {showMetadata && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowMetadata(false)}>
+            <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-5 border-b border-gray-100">
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Sparkles size={18} className="text-purple-600" /> Extracted Metadata</h2>
+                <div className="flex items-center gap-2">
+                  <button onClick={handleExtractMetadata} disabled={extracting} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 disabled:opacity-50">
+                    <RefreshCw size={12} className={extracting ? "animate-spin" : ""} /> {extracting ? "Extracting..." : "Re-extract"}
+                  </button>
+                  <button onClick={() => setShowMetadata(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+                </div>
+              </div>
+
+              {extracting && !metadata ? (
+                <div className="p-10 text-center">
+                  <RefreshCw size={24} className="animate-spin mx-auto text-purple-500 mb-3" />
+                  <p className="text-sm text-gray-500">Analyzing document with Docling...</p>
+                </div>
+              ) : metadata ? (
+                <div className="p-5 space-y-5">
+                  {metadata.error && (
+                    <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg">Extraction error: {metadata.error}</div>
+                  )}
+
+                  {metadata.headline && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Headline / Subject</h3>
+                      <p className="text-sm text-gray-800 font-medium">{metadata.headline}</p>
+                    </div>
+                  )}
+
+                  {metadata.dates && metadata.dates.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Dates Found</h3>
+                      <div className="space-y-1.5">
+                        {metadata.dates.map((d, i) => (
+                          <div key={i} className="flex items-center gap-2 text-sm">
+                            <Calendar size={14} className="text-blue-500" />
+                            <span className="capitalize font-medium text-gray-600 min-w-[100px]">{d.label.replace(/_/g, " ")}:</span>
+                            <span className="text-gray-800">{d.date}</span>
+                            <span className="text-xs text-gray-400">({d.raw})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {metadata.amounts && metadata.amounts.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Amounts</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {metadata.amounts.map((a, i) => (
+                          <span key={i} className="text-sm bg-green-50 text-green-700 px-2.5 py-1 rounded-lg font-medium">{a}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {metadata.page_count && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Pages</h3>
+                      <p className="text-sm text-gray-700">{metadata.page_count}</p>
+                    </div>
+                  )}
+
+                  {metadata.doc_metadata && Object.keys(metadata.doc_metadata).length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">File Metadata</h3>
+                      <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                        {Object.entries(metadata.doc_metadata).map(([k, v]) => (
+                          <div key={k} className="flex gap-2 text-sm">
+                            <span className="font-medium text-gray-500 capitalize min-w-[80px]">{k}:</span>
+                            <span className="text-gray-700">{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {metadata.summary && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Summary</h3>
+                      <p className="text-sm text-gray-700 leading-relaxed">{metadata.summary}</p>
+                    </div>
+                  )}
+
+                  {metadata.full_text_preview && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Text Preview</h3>
+                      <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap max-h-48 overflow-y-auto">{metadata.full_text_preview}</pre>
+                    </div>
+                  )}
+
+                  {!metadata.headline && !metadata.dates?.length && !metadata.amounts?.length && !metadata.summary && !metadata.error && (
+                    <p className="text-sm text-gray-400 text-center py-4">No metadata could be extracted from this document.</p>
+                  )}
+                </div>
+              ) : (
+                <div className="p-10 text-center text-sm text-gray-400">No metadata available. Click &quot;Re-extract&quot; to analyze.</div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
     </AuthGuard>
   );

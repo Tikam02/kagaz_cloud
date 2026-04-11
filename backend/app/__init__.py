@@ -40,6 +40,7 @@ def create_app():
     from .bot import bot_bp
     from .admin import admin_bp
     from .tickets import tickets_bp
+    from .search_api import search_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(documents_bp)
@@ -48,6 +49,7 @@ def create_app():
     app.register_blueprint(bot_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(tickets_bp)
+    app.register_blueprint(search_bp)
 
     @app.route("/api/health")
     def health_check():
@@ -60,5 +62,8 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        # Initialize OpenSearch index
+        from . import search as search_service
+        search_service.ensure_index()
 
     return app

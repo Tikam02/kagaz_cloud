@@ -59,6 +59,7 @@ class Document(db.Model):
     date_label = db.Column(db.String(100), nullable=True)
     reminder_days_before = db.Column(db.Integer, default=30)
     collection_id = db.Column(db.Integer, db.ForeignKey("collection.id"), nullable=True)
+    metadata_extracted = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -79,6 +80,7 @@ class Document(db.Model):
             "date_label": self.date_label,
             "reminder_days_before": self.reminder_days_before,
             "collection_id": self.collection_id,
+            "metadata_extracted": self.metadata_extracted,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }

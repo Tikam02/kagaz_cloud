@@ -1,9 +1,15 @@
 import os
 import uuid
+import logging
+import threading
 from datetime import date
 from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from .models import db, Document
+from .extract_metadata import extract_metadata
+from . import search as search_service
+
+logger = logging.getLogger(__name__)
 
 documents_bp = Blueprint("documents", __name__, url_prefix="/api/documents")
 
@@ -41,10 +47,15 @@ def list_documents():
 
     search = request.args.get("search")
     if search:
+        pattern = f"%{search}%"
         query = query.filter(
             db.or_(
-                Document.title.ilike(f"%{search}%"),
-                Document.description.ilike(f"%{search}%"),
+                Document.title.ilike(pattern),
+                Document.description.ilike(pattern),
+                Document.category.ilike(pattern),
+                Document.date_label.ilike(pattern),
+                Document.tags.cast(db.String).ilike(pattern),
+                Document.metadata_extracted.cast(db.String).ilike(pattern),
             )
         )
 
@@ -106,6 +117,42 @@ def create_document():
     db.session.add(doc)
     db.session.commit()
 
+    # Extract metadata synchronously and auto-fill empty fields
+    abs_path = os.path.join(upload_dir, unique_name)
+    full_text = None
+    try:
+        metadata = extract_metadata(abs_path)
+        doc.metadata_extracted = metadata
+        full_text = metadata.get("full_text")
+
+        # Auto-fill title if user just used the filename
+        if metadata.get("headline") and title == file.filename:
+            doc.title = metadata["headline"][:200]
+
+        # Auto-fill description from summary
+        if not doc.description and metadata.get("summary"):
+            doc.description = metadata["summary"][:500]
+
+        # Auto-fill tags
+        if not doc.tags and metadata.get("tags"):
+            doc.tags = metadata["tags"]
+
+        # Auto-fill important_date from first date found
+        if not doc.important_date and metadata.get("dates"):
+            first = metadata["dates"][0]
+            try:
+                doc.important_date = date.fromisoformat(first["date"])
+                doc.date_label = first.get("label", "date")
+            except (ValueError, KeyError):
+                pass
+
+        db.session.commit()
+    except Exception:
+        logger.warning("Metadata extraction failed for doc %s", doc.id, exc_info=True)
+
+    # Index in OpenSearch for full-text search
+    search_service.index_document(doc, full_text=full_text)
+
     return jsonify({"document": doc.to_dict()}), 201
 
 
@@ -145,6 +192,10 @@ def update_document(doc_id):
         doc.collection_id = data["collection_id"]
 
     db.session.commit()
+
+    # Update OpenSearch index
+    search_service.update_document(doc)
+
     return jsonify({"document": doc.to_dict()})
 
 
@@ -162,6 +213,10 @@ def delete_document(doc_id):
 
     db.session.delete(doc)
     db.session.commit()
+
+    # Remove from OpenSearch index
+    search_service.delete_document(doc_id, user_id)
+
     return jsonify({"message": "Document deleted"})
 
 
@@ -212,3 +267,49 @@ def preview_document(doc_id):
         as_attachment=False,          # inline — let the browser render it
         download_name=f"{doc.title}.{doc.file_type}",
     )
+
+
+@documents_bp.route("/<int:doc_id>/metadata", methods=["GET"])
+@jwt_required()
+def get_metadata(doc_id):
+    """Return the extracted metadata for a document."""
+    user_id = int(get_jwt_identity())
+    doc = Document.query.filter_by(id=doc_id, user_id=user_id).first()
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+
+    return jsonify({"metadata": doc.metadata_extracted})
+
+
+@documents_bp.route("/<int:doc_id>/metadata/extract", methods=["POST"])
+@jwt_required()
+def reextract_metadata(doc_id):
+    """Re-extract metadata from the document file using Docling (async)."""
+    user_id = int(get_jwt_identity())
+    doc = Document.query.filter_by(id=doc_id, user_id=user_id).first()
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+
+    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found on disk"}), 404
+
+    # Clear old metadata and run extraction in background
+    doc.metadata_extracted = None
+    db.session.commit()
+
+    def _bg_reextract(app, d_id, fpath):
+        with app.app_context():
+            try:
+                metadata = extract_metadata(fpath)
+                d = db.session.get(Document, d_id)
+                if d:
+                    d.metadata_extracted = metadata
+                    db.session.commit()
+            except Exception:
+                logger.exception("Metadata re-extraction failed for doc %s", d_id)
+
+    app = current_app._get_current_object()
+    threading.Thread(target=_bg_reextract, args=(app, doc.id, file_path), daemon=True).start()
+
+    return jsonify({"status": "extracting", "message": "Extraction started, poll GET /metadata for results"}), 202
