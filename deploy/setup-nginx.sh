@@ -7,7 +7,7 @@ BACKEND_UPSTREAM="127.0.0.1:5000"
 FRONTEND_UPSTREAM="127.0.0.1:3000"
 NGINX_CONF="/etc/nginx/sites-available/kagaz-cloud"
 NGINX_LINK="/etc/nginx/sites-enabled/kagaz-cloud"
-UPLOAD_DIR="/home/tikam/dev/kagaz_cloud/backend/uploads"
+UPLOAD_DIR="/root/kagaz_cloud/backend/uploads"
 
 # ─── Colors ───────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'

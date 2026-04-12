@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ─── Configuration ────────────────────────────────────────────
 APP_NAME="kagaz-backend"
-APP_DIR="/home/tikam/dev/kagaz_cloud/backend"
+APP_DIR="/root/kagaz_cloud/backend"
 VENV_DIR="$APP_DIR/venv"
 SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
 GUNICORN_WORKERS="${GUNICORN_WORKERS:-3}"

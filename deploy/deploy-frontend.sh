@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ─── Configuration ────────────────────────────────────────────
 APP_NAME="kagaz-frontend"
-APP_DIR="/home/tikam/dev/kagaz_cloud/frontend"
+APP_DIR="/root/kagaz_cloud/frontend"
 SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
 NODE_PORT="${NODE_PORT:-3000}"
 USER="$(whoami)"
