@@ -35,7 +35,7 @@ upstream frontend {
 
 server {
     listen 80;
-    server_name ${DOMAIN};
+    server_name ${DOMAIN} www.${DOMAIN};
 
     client_max_body_size 50M;
 

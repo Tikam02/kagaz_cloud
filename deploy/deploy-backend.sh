@@ -6,7 +6,7 @@ APP_NAME="kagaz-backend"
 APP_DIR="/root/kagaz_cloud/backend"
 VENV_DIR="$APP_DIR/venv"
 SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
-GUNICORN_WORKERS="${GUNICORN_WORKERS:-3}"
+GUNICORN_WORKERS="${GUNICORN_WORKERS:-1}"  # 1 worker: Docling loads ~1.5 GB; 2 workers = OOM on 2 GB server
 GUNICORN_BIND="${GUNICORN_BIND:-127.0.0.1:5000}"
 USER="$(whoami)"
 GROUP="$(id -gn)"

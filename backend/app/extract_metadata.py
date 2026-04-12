@@ -13,10 +13,8 @@ from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
+# Docling imports are deferred to _get_converter() so that importing this
+# module does NOT load 1.5 GB of ML model weights at startup (gunicorn OOM-kill prevention).
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +25,17 @@ _converter_lock = threading.Lock()
 EXTRACTION_TIMEOUT_SECONDS = 60  # max time for a single extraction
 
 
-def _get_converter() -> DocumentConverter:
+def _get_converter():
     global _converter
     if _converter is None:
         with _converter_lock:
             if _converter is None:
+                # Lazy import: defer heavy model loading until first actual use
+                from docling.document_converter import DocumentConverter, PdfFormatOption
+                from docling.datamodel.base_models import InputFormat
+                from docling.datamodel.pipeline_options import PdfPipelineOptions
+                from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
+
                 logger.info("Initializing DocumentConverter (one-time model load)...")
                 pdf_opts = PdfPipelineOptions(
                     do_table_structure=False,
