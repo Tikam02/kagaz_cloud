@@ -1,7 +1,9 @@
+import io
 import os
 import uuid
 import secrets
 import logging
+import tempfile
 import threading
 from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, request, jsonify, current_app, send_file
@@ -9,11 +11,36 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.security import generate_password_hash, check_password_hash
 from .models import db, Document, ShareLink
 from .extract_metadata import extract_metadata
+from .crypto import encrypt_file, decrypt_file, is_encryption_enabled
+from .rate_limit import rate_limit
 from . import search as search_service
 
 logger = logging.getLogger(__name__)
 
 documents_bp = Blueprint("documents", __name__, url_prefix="/api/documents")
+
+
+def _safe_path(upload_folder: str, filename: str) -> str:
+    """Resolve *filename* under *upload_folder* and guard against path traversal."""
+    full = os.path.realpath(os.path.join(upload_folder, filename))
+    if not full.startswith(os.path.realpath(upload_folder)):
+        raise ValueError("Path traversal detected")
+    return full
+
+
+def _send_decrypted(file_path: str, user_id: int, *, as_attachment: bool,
+                     download_name: str, mimetype: str | None = None):
+    """Decrypt a file (if encryption is on) and send it via Flask."""
+    if is_encryption_enabled():
+        buf = decrypt_file(file_path, user_id)
+        kwargs: dict = dict(as_attachment=as_attachment, download_name=download_name)
+        if mimetype:
+            kwargs["mimetype"] = mimetype
+        return send_file(buf, **kwargs)
+    kwargs = dict(as_attachment=as_attachment, download_name=download_name)
+    if mimetype:
+        kwargs["mimetype"] = mimetype
+    return send_file(file_path, **kwargs)
 
 CATEGORY_KEYWORDS = {
     "license": ["license", "permit", "certification", "certified"],
@@ -86,6 +113,10 @@ def create_document():
     file.save(file_path)
 
     file_size = os.path.getsize(file_path)
+
+    # Encrypt file on disk
+    if is_encryption_enabled():
+        encrypt_file(file_path, user_id)
     category = request.form.get("category") or detect_category(title, file.filename)
 
     important_date = request.form.get("important_date")
@@ -119,11 +150,20 @@ def create_document():
     db.session.add(doc)
     db.session.commit()
 
-    # Extract metadata synchronously and auto-fill empty fields
+    # Extract metadata — decrypt to temp file if encrypted
     abs_path = os.path.join(upload_dir, unique_name)
     full_text = None
+    tmp_plain = None
     try:
-        metadata = extract_metadata(abs_path)
+        if is_encryption_enabled():
+            tmp_plain = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+            buf = decrypt_file(abs_path, user_id)
+            tmp_plain.write(buf.read())
+            tmp_plain.close()
+            extract_path = tmp_plain.name
+        else:
+            extract_path = abs_path
+        metadata = extract_metadata(extract_path)
         doc.metadata_extracted = metadata
         full_text = metadata.get("full_text")
 
@@ -151,6 +191,9 @@ def create_document():
         db.session.commit()
     except Exception:
         logger.warning("Metadata extraction failed for doc %s", doc.id, exc_info=True)
+    finally:
+        if tmp_plain and os.path.exists(tmp_plain.name):
+            os.unlink(tmp_plain.name)
 
     # Index in OpenSearch for full-text search
     search_service.index_document(doc, full_text=full_text)
@@ -209,7 +252,7 @@ def delete_document(doc_id):
     if not doc:
         return jsonify({"error": "Document not found"}), 404
 
-    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    file_path = _safe_path(current_app.config["UPLOAD_FOLDER"], doc.file_path)
     if os.path.exists(file_path):
         os.remove(file_path)
 
@@ -230,11 +273,12 @@ def download_document(doc_id):
     if not doc:
         return jsonify({"error": "Document not found"}), 404
 
-    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    file_path = _safe_path(current_app.config["UPLOAD_FOLDER"], doc.file_path)
     if not os.path.exists(file_path):
         return jsonify({"error": "File not found on disk"}), 404
 
-    return send_file(file_path, as_attachment=True, download_name=f"{doc.title}.{doc.file_type}")
+    return _send_decrypted(file_path, user_id, as_attachment=True,
+                           download_name=f"{doc.title}.{doc.file_type}")
 
 
 @documents_bp.route("/<int:doc_id>/preview", methods=["GET"])
@@ -246,11 +290,10 @@ def preview_document(doc_id):
     if not doc:
         return jsonify({"error": "Document not found"}), 404
 
-    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    file_path = _safe_path(current_app.config["UPLOAD_FOLDER"], doc.file_path)
     if not os.path.exists(file_path):
         return jsonify({"error": "File not found on disk"}), 404
 
-    # MIME type map for common document/image types
     mime_map = {
         "pdf":  "application/pdf",
         "png":  "image/png",
@@ -263,12 +306,8 @@ def preview_document(doc_id):
     }
     mime = mime_map.get(doc.file_type.lower(), "application/octet-stream")
 
-    return send_file(
-        file_path,
-        mimetype=mime,
-        as_attachment=False,          # inline — let the browser render it
-        download_name=f"{doc.title}.{doc.file_type}",
-    )
+    return _send_decrypted(file_path, user_id, as_attachment=False,
+                           download_name=f"{doc.title}.{doc.file_type}", mimetype=mime)
 
 
 @documents_bp.route("/<int:doc_id>/metadata", methods=["GET"])
@@ -292,7 +331,7 @@ def reextract_metadata(doc_id):
     if not doc:
         return jsonify({"error": "Document not found"}), 404
 
-    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    file_path = _safe_path(current_app.config["UPLOAD_FOLDER"], doc.file_path)
     if not os.path.exists(file_path):
         return jsonify({"error": "File not found on disk"}), 404
 
@@ -300,19 +339,31 @@ def reextract_metadata(doc_id):
     doc.metadata_extracted = None
     db.session.commit()
 
-    def _bg_reextract(app, d_id, fpath):
+    def _bg_reextract(app, d_id, fpath, uid):
         with app.app_context():
+            tmp = None
             try:
-                metadata = extract_metadata(fpath)
+                if is_encryption_enabled():
+                    tmp = tempfile.NamedTemporaryFile(delete=False)
+                    buf = decrypt_file(fpath, uid)
+                    tmp.write(buf.read())
+                    tmp.close()
+                    extract_path = tmp.name
+                else:
+                    extract_path = fpath
+                metadata = extract_metadata(extract_path)
                 d = db.session.get(Document, d_id)
                 if d:
                     d.metadata_extracted = metadata
                     db.session.commit()
             except Exception:
                 logger.exception("Metadata re-extraction failed for doc %s", d_id)
+            finally:
+                if tmp and os.path.exists(tmp.name):
+                    os.unlink(tmp.name)
 
     app = current_app._get_current_object()
-    threading.Thread(target=_bg_reextract, args=(app, doc.id, file_path), daemon=True).start()
+    threading.Thread(target=_bg_reextract, args=(app, doc.id, file_path, user_id), daemon=True).start()
 
     return jsonify({"status": "extracting", "message": "Extraction started, poll GET /metadata for results"}), 202
 
@@ -401,11 +452,13 @@ def share_link_download(token_str):
     db.session.commit()
 
     doc = link.document
-    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    # Decrypt using the *owner's* user_id (the person who uploaded the file)
+    file_path = _safe_path(current_app.config["UPLOAD_FOLDER"], doc.file_path)
     if not os.path.exists(file_path):
         return jsonify({"error": "File not found"}), 404
 
-    return send_file(file_path, as_attachment=True, download_name=f"{doc.title}.{doc.file_type}")
+    return _send_decrypted(file_path, link.user_id, as_attachment=True,
+                           download_name=f"{doc.title}.{doc.file_type}")
 
 
 @documents_bp.route("/share/<token_str>/preview", methods=["GET"])
@@ -424,7 +477,7 @@ def share_link_preview(token_str):
     db.session.commit()
 
     doc = link.document
-    file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], doc.file_path)
+    file_path = _safe_path(current_app.config["UPLOAD_FOLDER"], doc.file_path)
     if not os.path.exists(file_path):
         return jsonify({"error": "File not found"}), 404
 
@@ -440,15 +493,12 @@ def share_link_preview(token_str):
     }
     mime = mime_map.get(doc.file_type.lower(), "application/octet-stream")
 
-    return send_file(
-        file_path,
-        mimetype=mime,
-        as_attachment=False,
-        download_name=f"{doc.title}.{doc.file_type}",
-    )
+    return _send_decrypted(file_path, link.user_id, as_attachment=False,
+                           download_name=f"{doc.title}.{doc.file_type}", mimetype=mime)
 
 
 @documents_bp.route("/share/<token_str>/verify", methods=["POST"])
+@rate_limit(max_attempts=5, window=300, key_func=lambda req: f"share_verify:{req.remote_addr}")
 def share_link_verify_password(token_str):
     """Public endpoint — verify the password for a password-protected share link."""
     link = ShareLink.query.filter_by(token=token_str).first()

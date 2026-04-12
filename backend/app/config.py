@@ -11,3 +11,4 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = 86400  # 24 hours
     UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
+    ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")  # set to enable AES-256 at-rest encryption
